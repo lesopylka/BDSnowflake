@@ -1,9 +1,8 @@
 BEGIN;
-
 DO $$
 BEGIN
     IF (SELECT COUNT(*) FROM public.mock_data) <> 10000 THEN
-        RAISE EXCEPTION 'Недостаточно строк';
+        RAISE EXCEPTION 'В mock_data должно быть 10000 строк. Сначала загрузите все CSV.';
     END IF;
 END;
 $$;
@@ -34,7 +33,6 @@ SELECT
         )::TEXT
     ) AS product_nk
 FROM public.mock_data m;
-
 INSERT INTO star.dim_country (country_name)
 SELECT DISTINCT TRIM(country_name)
 FROM (
@@ -48,62 +46,53 @@ FROM (
 ) countries
 WHERE NULLIF(TRIM(country_name), '') IS NOT NULL
 ON CONFLICT (country_name) DO NOTHING;
-
 INSERT INTO star.dim_pet_type (pet_type_name)
 SELECT DISTINCT TRIM(customer_pet_type)
 FROM source_data
 WHERE NULLIF(TRIM(customer_pet_type), '') IS NOT NULL
 ON CONFLICT (pet_type_name) DO NOTHING;
-
-INSERT INTO star.dim_pet_breed (breed_name)
-SELECT DISTINCT TRIM(customer_pet_breed)
-FROM source_data
-WHERE NULLIF(TRIM(customer_pet_breed), '') IS NOT NULL
-ON CONFLICT (breed_name) DO NOTHING;
+INSERT INTO star.dim_pet_breed (breed_name, pet_type_id)
+SELECT DISTINCT
+    TRIM(m.customer_pet_breed),
+    pt.pet_type_id
+FROM source_data m
+JOIN star.dim_pet_type pt
+    ON pt.pet_type_name = TRIM(m.customer_pet_type)
+WHERE NULLIF(TRIM(m.customer_pet_breed), '') IS NOT NULL
+ON CONFLICT (breed_name, pet_type_id) DO NOTHING;
 
 INSERT INTO star.dim_product_category (category_name)
 SELECT DISTINCT TRIM(product_category)
 FROM source_data
 WHERE NULLIF(TRIM(product_category), '') IS NOT NULL
 ON CONFLICT (category_name) DO NOTHING;
-
 INSERT INTO star.dim_pet_category (pet_category_name)
 SELECT DISTINCT TRIM(pet_category)
 FROM source_data
 WHERE NULLIF(TRIM(pet_category), '') IS NOT NULL
 ON CONFLICT (pet_category_name) DO NOTHING;
-
 INSERT INTO star.dim_brand (brand_name)
 SELECT DISTINCT TRIM(product_brand)
 FROM source_data
 WHERE NULLIF(TRIM(product_brand), '') IS NOT NULL
 ON CONFLICT (brand_name) DO NOTHING;
-
 INSERT INTO star.dim_color (color_name)
 SELECT DISTINCT TRIM(product_color)
 FROM source_data
 WHERE NULLIF(TRIM(product_color), '') IS NOT NULL
 ON CONFLICT (color_name) DO NOTHING;
-
 INSERT INTO star.dim_size (size_name)
 SELECT DISTINCT TRIM(product_size)
 FROM source_data
 WHERE NULLIF(TRIM(product_size), '') IS NOT NULL
 ON CONFLICT (size_name) DO NOTHING;
-
 INSERT INTO star.dim_material (material_name)
 SELECT DISTINCT TRIM(product_material)
 FROM source_data
 WHERE NULLIF(TRIM(product_material), '') IS NOT NULL
 ON CONFLICT (material_name) DO NOTHING;
-
 INSERT INTO star.dim_date (
-    full_date,
-    year_num,
-    quarter_num,
-    month_num,
-    day_num,
-    month_name
+    full_date, year_num, quarter_num, month_num, day_num, month_name
 )
 SELECT
     full_date,
@@ -119,34 +108,23 @@ FROM (
     WHERE NULLIF(TRIM(sale_date), '') IS NOT NULL
 ) dates
 ON CONFLICT (full_date) DO NOTHING;
-
 INSERT INTO star.dim_city (city_name, country_id)
 SELECT DISTINCT
     TRIM(cities.city_name),
     country.country_id
 FROM (
-    SELECT
-        store_city AS city_name,
-        store_country AS country_name
+    SELECT store_city AS city_name, store_country AS country_name
     FROM source_data
     UNION ALL
-    SELECT
-        supplier_city,
-        supplier_country
+    SELECT supplier_city, supplier_country
     FROM source_data
 ) cities
 JOIN star.dim_country country
     ON country.country_name = TRIM(cities.country_name)
 WHERE NULLIF(TRIM(cities.city_name), '') IS NOT NULL
 ON CONFLICT (city_name, country_id) DO NOTHING;
-
 INSERT INTO star.dim_supplier (
-    supplier_name,
-    contact_name,
-    email,
-    phone,
-    address,
-    city_id
+    supplier_name, contact_name, email, phone, address, city_id
 )
 SELECT DISTINCT ON (TRIM(m.supplier_email))
     NULLIF(TRIM(m.supplier_name), ''),
@@ -164,17 +142,9 @@ LEFT JOIN star.dim_city city
 WHERE NULLIF(TRIM(m.supplier_email), '') IS NOT NULL
 ORDER BY TRIM(m.supplier_email), TO_JSONB(m)::TEXT
 ON CONFLICT (email) DO NOTHING;
-
 INSERT INTO star.dim_customer (
-    first_name,
-    last_name,
-    age,
-    email,
-    postal_code,
-    country_id,
-    pet_type_id,
-    pet_breed_id,
-    pet_name
+    first_name, last_name, age, email, postal_code,
+    country_id, pet_type_id, pet_breed_id, pet_name
 )
 SELECT DISTINCT ON (TRIM(m.customer_email))
     NULLIF(TRIM(m.customer_first_name), ''),
@@ -193,16 +163,12 @@ LEFT JOIN star.dim_pet_type pet_type
     ON pet_type.pet_type_name = TRIM(m.customer_pet_type)
 LEFT JOIN star.dim_pet_breed breed
     ON breed.breed_name = TRIM(m.customer_pet_breed)
+    AND breed.pet_type_id = pet_type.pet_type_id
 WHERE NULLIF(TRIM(m.customer_email), '') IS NOT NULL
 ORDER BY TRIM(m.customer_email), TO_JSONB(m)::TEXT
 ON CONFLICT (email) DO NOTHING;
-
 INSERT INTO star.dim_seller (
-    first_name,
-    last_name,
-    email,
-    postal_code,
-    country_id
+    first_name, last_name, email, postal_code, country_id
 )
 SELECT DISTINCT ON (TRIM(m.seller_email))
     NULLIF(TRIM(m.seller_first_name), ''),
@@ -216,14 +182,8 @@ LEFT JOIN star.dim_country country
 WHERE NULLIF(TRIM(m.seller_email), '') IS NOT NULL
 ORDER BY TRIM(m.seller_email), TO_JSONB(m)::TEXT
 ON CONFLICT (email) DO NOTHING;
-
 INSERT INTO star.dim_store (
-    store_name,
-    location,
-    state_name,
-    phone,
-    email,
-    city_id
+    store_name, location, state_name, phone, email, city_id
 )
 SELECT DISTINCT ON (TRIM(m.store_email))
     NULLIF(TRIM(m.store_name), ''),
@@ -241,25 +201,11 @@ LEFT JOIN star.dim_city city
 WHERE NULLIF(TRIM(m.store_email), '') IS NOT NULL
 ORDER BY TRIM(m.store_email), TO_JSONB(m)::TEXT
 ON CONFLICT (email) DO NOTHING;
-
 INSERT INTO star.dim_product (
-    product_name,
-    price,
-    stock_quantity,
-    weight,
-    rating,
-    reviews,
-    description,
-    release_date,
-    expiry_date,
-    category_id,
-    pet_category_id,
-    brand_id,
-    color_id,
-    size_id,
-    material_id,
-    supplier_id,
-    product_nk
+    product_name, price, stock_quantity, weight, rating, reviews,
+    description, release_date, expiry_date, category_id,
+    pet_category_id, brand_id, color_id, size_id, material_id,
+    supplier_id, product_nk
 )
 SELECT DISTINCT ON (m.product_nk)
     NULLIF(TRIM(m.product_name), ''),
@@ -275,7 +221,7 @@ SELECT DISTINCT ON (m.product_nk)
     pet_category.pet_category_id,
     brand.brand_id,
     color.color_id,
-    product_size.size_id,
+    size.size_id,
     material.material_id,
     supplier.supplier_id,
     m.product_nk
@@ -288,23 +234,17 @@ LEFT JOIN star.dim_brand brand
     ON brand.brand_name = TRIM(m.product_brand)
 LEFT JOIN star.dim_color color
     ON color.color_name = TRIM(m.product_color)
-LEFT JOIN star.dim_size product_size
-    ON product_size.size_name = TRIM(m.product_size)
+LEFT JOIN star.dim_size size
+    ON size.size_name = TRIM(m.product_size)
 LEFT JOIN star.dim_material material
     ON material.material_name = TRIM(m.product_material)
 LEFT JOIN star.dim_supplier supplier
     ON supplier.email = TRIM(m.supplier_email)
 ORDER BY m.product_nk, TO_JSONB(m)::TEXT
 ON CONFLICT (product_nk) DO NOTHING;
-
 INSERT INTO star.fact_sales (
-    sale_date_id,
-    customer_id,
-    seller_id,
-    product_id,
-    store_id,
-    sale_quantity,
-    sale_total_price
+    sale_date_id, customer_id, seller_id, product_id,
+    store_id, sale_quantity, sale_total_price
 )
 SELECT
     date_dim.date_id,
@@ -326,18 +266,15 @@ LEFT JOIN star.dim_product product
     ON product.product_nk = m.product_nk
 LEFT JOIN star.dim_store store
     ON store.email = TRIM(m.store_email);
-
 DO $$
 BEGIN
     IF (SELECT COUNT(*) FROM star.fact_sales)
         <> (SELECT COUNT(*) FROM source_data) THEN
-        RAISE EXCEPTION 'Количество продаж не совпадает с количеством исходных строк';
+        RAISE EXCEPTION 'Количество продаж не совпадает с количеством исходных строк.';
     END IF;
 END;
 $$;
-
 COMMIT;
-
 SELECT
     (SELECT COUNT(*) FROM public.mock_data) AS source_rows,
     (SELECT COUNT(*) FROM star.fact_sales) AS loaded_sales;
